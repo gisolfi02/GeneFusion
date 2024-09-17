@@ -1,3 +1,4 @@
 .venv
 .idea
 vocab_kmer_4.txt
+bert_model

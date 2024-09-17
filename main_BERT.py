@@ -33,9 +33,10 @@ def estrai_sequenze_geni(file_fastq):
         lines = file.readlines()
         for i in range(0, len(lines), 2):
             sequence = lines[i + 1].strip()
-            sequenze_geni.append(sequence)
-            k +=1
-            if(k == 960):
+            if len(sequence) > 6:
+                sequenze_geni.append(sequence)
+                k += 1
+            if (k == 960):
                 break
     return sequenze_geni
 
@@ -113,7 +114,8 @@ def print_adjacency_matrix(nodes, adjacency_matrix):
 
 
 BERT_model = BertForSequenceClassification.from_pretrained("./bert_model")
-tokenizer = BertTokenizer.from_pretrained("./bert_model")
+model_name = "zhihan1996/DNA_bert_6"
+tokenizer = BertTokenizer.from_pretrained(model_name)
 
 device = torch.device('cpu')
 BERT_model.to(device)
@@ -135,31 +137,31 @@ BERT_model.to(device)
 def get_feature_matrix(nodes):
     BERT_model.eval()
 
-    features_matrix = []  # Lista per memorizzare le feature di ciascun nodo
-    for kmer in nodes:  # Itera sui nodi (i kmer) e crea embedding con BERT
-        # Tokenizza il kmer
-        inputs = tokenizer(kmer, return_tensors="pt", max_length=128, padding='max_length', truncation=True)
+    features_matrix = []
+    for node in nodes:
+        inputs = tokenizer(node, return_tensors="pt", max_length=128, padding='max_length', truncation=True)
 
         # Estrai embedding BERT
         with torch.no_grad():  # Non serve il calcolo del gradiente
-            outputs = BERT_model.bert(input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask'])
+            outputs = BERT_model(**inputs, output_hidden_states=True)
 
         # Ottieni gli embedding dal livello nascosto (hidden states)
-        embedding = outputs.last_hidden_state.mean(dim=1)  # Puoi usare mean pooling sull'intera sequenza
-
-        # Aggiungi l'embedding alla matrice delle feature
+        hidden_states = outputs.hidden_states
+        last_hidden_state = hidden_states[-1]
+        embedding = last_hidden_state.mean(dim=1)  # Puoi usare mean pooling sull'intera sequenza
         features_matrix.append(embedding.squeeze(0).cpu().numpy())
+
     return features_matrix
 
 
 def create_graph_data(sequences, chimeric):
     data_list = []
-    k=0
+    k = 0
     for seq in sequences:
-        kmers = get_kmer(seq) #ottengo i kmer della sequenza
-        edges = get_debruijn_edges(kmers) #creo gli archi del grafo di De Bruijn
-        nodes, adjacency_matrix = create_adjacency_matrix(edges) #creo la matrice di adiacenza del grafo
-        features_matrix = get_feature_matrix(nodes) #creo la matrice delle feature dei nodi, che continene per ogni riga l'encoding BERT del nodo
+        kmers = get_kmer(seq, k=6)  # ottengo i kmer della sequenza
+        edges = get_debruijn_edges(kmers)  # creo gli archi del grafo di De Bruijn
+        nodes, adjacency_matrix = create_adjacency_matrix(edges)  # creo la matrice di adiacenza del grafo
+        features_matrix = get_feature_matrix(nodes)  # creo la matrice delle feature dei nodi, che continene per ogni riga l'encoding BERT del nodo
         features_matrix = np.array(features_matrix)
 
         # Crea una lista vuota per memorizzare gli indici degli archi
@@ -178,7 +180,6 @@ def create_graph_data(sequences, chimeric):
         # Converti l'elenco degli indici degli archi in un tensore di PyTorch
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
 
-        # Converte la matrice delle feature in un tensore di PyTorch
         x = torch.tensor(features_matrix, dtype=torch.float)
 
         # Crea un tensore di PyTorch con le etichette per ogni nodo
@@ -188,7 +189,7 @@ def create_graph_data(sequences, chimeric):
         data = Data(x=x, edge_index=edge_index, y=y)
         data_list.append(data)
 
-        k+=1
+        k += 1
         print(f'{k:4d} Graph created: ')
         print(data)
     return data_list

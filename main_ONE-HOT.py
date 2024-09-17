@@ -31,8 +31,9 @@ def estrai_sequenze_geni(file_fastq):
         lines = file.readlines()
         for i in range(0, len(lines), 2):
             sequence = lines[i + 1].strip()
-            sequenze_geni.append(sequence)
-            k += 1
+            if len(sequence) > 6:
+                sequenze_geni.append(sequence)
+                k += 1
             if (k == 960):
                 break
     return sequenze_geni
