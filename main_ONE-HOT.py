@@ -211,7 +211,7 @@ def create_graph_data(sequences, chimeric):
 
 
 in_channels = 24
-hidden_channels = 128
+hidden_channels = 16
 out_channels = 2
 
 
