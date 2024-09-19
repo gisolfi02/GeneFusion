@@ -1,3 +1,4 @@
+import pickle
 import toyplot
 from sklearn.metrics import roc_curve, auc
 import torch
@@ -225,7 +226,7 @@ class GCN(torch.nn.Module):
         self.conv4 = GCNConv(hidden_channels, hidden_channels)
         self.conv5 = GCNConv(hidden_channels, hidden_channels)
         self.conv6 = GCNConv(hidden_channels, hidden_channels)
-        self.lin = torch.nn.Linear(hidden_channels, out_channels)
+        self.lin = torch.nn.Linear(hidden_channels, 1)
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
@@ -236,13 +237,11 @@ class GCN(torch.nn.Module):
         x = F.dropout(x, p=0.5, training=self.training)
         x = self.conv2(x, edge_index)
         x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
         x = self.conv3(x, edge_index)
         x = F.relu(x)
         x = F.dropout(x, p=0.5, training=self.training)
         x = self.conv4(x, edge_index)
         x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
         x = self.conv5(x, edge_index)
         x = F.relu(x)
         x = F.dropout(x, p=0.5, training=self.training)
@@ -254,7 +253,9 @@ class GCN(torch.nn.Module):
         # Classifier
         x = F.dropout(x, p=0.5, training=self.training)
         x = self.lin(x)
-        return F.log_softmax(x, dim=1)
+
+        # Applica la funzione sigmoid per il ritorno
+        return torch.sigmoid(x)
 
 
 
@@ -270,8 +271,8 @@ class GCN(torch.nn.Module):
 
 
 
-def train(model, train_loader, val_loader):
-    criterion = torch.nn.CrossEntropyLoss()
+def train(model, loader):
+    criterion = torch.nn.BCELoss()  # Usare BCELoss con sigmoid nel modello
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.01)
 
     epochs = 200  # Numero di epoche per cui allenare il modello
@@ -280,21 +281,21 @@ def train(model, train_loader, val_loader):
 
     # Ciclo principale di addestramento per ciascuna epoca
     for epoch in range(epochs + 1):
-        # Inizializza le variabili per tenere traccia della perdita totale e dell'accuratezza
         total_loss = 0
         acc = 0
         val_loss = 0
         val_acc = 0
 
         # Addestramento del modello su mini-batch
-        for data in train_loader:
+        for data in loader:
             optimizer.zero_grad()  # Resetto i gradienti dell'ottimizzatore
             out = model(data)  # Passo i dati attraverso il modello
-            loss = criterion(out, data.y)  # Passo i dati attraverso il modello
+            loss = criterion(out, data.y.unsqueeze(1).float())  # Calcolo della perdita
 
             # Aggiorno la perdita totale e l'accuratezza per questa epoca
-            total_loss += loss / len(train_loader)
-            acc += accuracy(out.argmax(dim=1), data.y) / len(train_loader)
+            total_loss += loss / len(loader)
+            predictions = (out > 0.5).float()  # Converti le probabilità in etichette binarie
+            acc += accuracy(predictions, data.y) / len(loader)
 
             loss.backward()  # Calcolo i gradienti per la backpropagation
             optimizer.step()  # Aggiorno i parametri del modello usando l'ottimizzatore
@@ -304,16 +305,16 @@ def train(model, train_loader, val_loader):
         # Stampo le metriche ogni 10 epoche per monitorare l'addestramento
         if epoch % 10 == 0:
             print(f'Epoch {epoch:>3} | Train Loss: {total_loss:.2f} '
-                  f'| Train Acc: {acc * 100:>5.2f}% '
+                  f'| Train Acc: {acc:>5.2f}% '
                   f'| Val Loss: {val_loss:.2f} '
-                  f'| Val Acc: {val_acc * 100:.2f}%')
+                  f'| Val Acc: {val_acc*10:.2f}%')
 
     return model
 
 
 @torch.no_grad()
 def validate(model, loader):
-    criterion = torch.nn.CrossEntropyLoss()
+    criterion = torch.nn.BCELoss()  # Usare BCELoss per sigmoid
 
     model.eval()
 
@@ -324,17 +325,20 @@ def validate(model, loader):
         out = model(data)
 
         # Calcola la perdita per il batch corrente
-        loss += criterion(out, data.y) / len(loader)
+        loss += criterion(out, data.y.unsqueeze(1).float()) / len(loader)  # Usa data.y come float per BCELoss
+
+        # Calcola le predizioni usando una soglia di 0.5
+        predictions = (out > 0.5).float()
 
         # Calcola l'accuratezza
-        acc += accuracy(out.argmax(dim=1), data.y) / len(loader)
+        acc += accuracy(predictions, data.y) / len(loader)
 
     return loss, acc
 
 
 @torch.no_grad()
 def test(model, loader):
-    criterion = torch.nn.CrossEntropyLoss()
+    criterion = torch.nn.BCELoss()  # Usa BCELoss per una singola classe binaria
 
     model.eval()
 
@@ -346,14 +350,17 @@ def test(model, loader):
     for data in loader:
         out = model(data)
 
+        # Applica sigmoid per ottenere le probabilità
+        prob = torch.sigmoid(out)  # Applica sigmoid per problemi binari
+
         # Calcola la perdita per il batch corrente
-        loss += criterion(out, data.y) / len(loader)
+        loss += criterion(prob, data.y.unsqueeze(1).float()) / len(loader)  # Data.y deve essere float per BCELoss
+
+        # Converti le probabilità in etichette predette (threshold 0.5)
+        preds = (prob > 0.5).int()  # Converte in 0 o 1 con soglia 0.5
 
         # Calcola l'accuratezza
-        acc += accuracy(out.argmax(dim=1), data.y) / len(loader)
-
-        # Estrai le probabilità predette per la classe positiva
-        prob = torch.softmax(out, dim=1)[:, 1]  # Probabilità della classe positiva (1)
+        acc += accuracy(preds, data.y) / len(loader)
 
         # Salva le probabilità e le etichette vere
         all_preds.append(prob.cpu().numpy())  # Porta i dati su CPU per sklearn
@@ -435,4 +442,4 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_set)):
 
     trained_model = train(model, train_loader, val_loader)
     test_loss, test_acc = test(trained_model, test_loader)
-    print(f'Test Loss: {test_loss:.2f} | Test Acc: {test_acc * 100:.2f}%')
+    print(f'Test Loss: {test_loss:.2f} | Test Acc: {test_acc * 10:.2f}%')
