@@ -1,4 +1,3 @@
-import pickle
 import toyplot
 from sklearn.metrics import roc_curve, auc
 import torch
