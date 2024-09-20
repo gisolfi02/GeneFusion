@@ -1,4 +1,3 @@
-import pickle
 import toyplot
 import torch
 from transformers import BertModel, BertTokenizer, BertConfig, BertForSequenceClassification
@@ -98,11 +97,13 @@ def print_adjacency_matrix(nodes, adjacency_matrix):
 
 
 
+
 """
 
                         Caricamento tokenizzatore e modello BERT
 
 """
+
 
 
 
@@ -126,6 +127,7 @@ BERT_model.to(device)
                         Creazione del dataset per il modello
 
 """
+
 
 
 

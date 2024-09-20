@@ -1,12 +1,15 @@
-import pickle
 from torch_geometric.loader import DataLoader
 import torch
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_mean_pool
 import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_curve, auc, accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from torch.utils.data import ConcatDataset
+import matplotlib as plt
+import seaborn as sns
+
+
+
 
 
 """
@@ -17,11 +20,6 @@ from torch.utils.data import ConcatDataset
 
 
 
-
-
-in_channels = 768
-hidden_channels = 256
-out_channels = 2
 
 
 class GCN(torch.nn.Module):
@@ -65,9 +63,6 @@ class GCN(torch.nn.Module):
         x = F.dropout(x, p=0.5, training=self.training)
         x = self.lin(x)
         return F.log_softmax(x, dim=1)
-
-
-model = GCN(in_channels, hidden_channels, out_channels)
 
 
 
@@ -146,7 +141,7 @@ def validate(model, loader):
 
 
 @torch.no_grad()
-def test(model, loader):
+def test(model, loader, path, run):
     criterion = torch.nn.CrossEntropyLoss()
 
     model.eval()
@@ -176,13 +171,20 @@ def test(model, loader):
     all_preds = np.concatenate(all_preds)
     all_labels = np.concatenate(all_labels)
 
-    # Calcola i valori della curva ROC
-    fpr, tpr, _ = roc_curve(all_labels, all_preds)
-    roc_auc_value = auc(fpr, tpr)
+    all_preds_binary = (all_preds > 0.5).astype(int)
 
-    # Disegna la curva ROC
+    # Calcolo delle metriche
+    acc_score = accuracy_score(all_labels, all_preds_binary)
+    precision = precision_score(all_labels, all_preds_binary)
+    recall = recall_score(all_labels, all_preds_binary)
+    f1 = f1_score(all_labels, all_preds_binary)
+    fpr, tpr, _ = roc_curve(all_labels, all_preds)
+    roc_auc = auc(fpr, tpr)
+    cm = confusion_matrix(all_labels, all_preds_binary)
+
+    #Plot della curva ROC
     plt.figure()
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (AUC = {roc_auc_value:.2f})')
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (AUC = {roc_auc:.2f})')
     plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
@@ -192,12 +194,32 @@ def test(model, loader):
     plt.legend(loc="lower right")
     plt.show()
 
+    # Plot della matrice di confusione
+    plt.figure(figsize=(6, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False,
+                xticklabels=['Negative', 'Positive'],
+                yticklabels=['Negative', 'Positive'])
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.title(f'Confusion Matrix (Run {run})')
+    plt.show()
+
+    #Salvataggio dei risultati su file
+    with open(path, "a") as f:
+        f.write(f"Run: {run}\n")
+        f.write(f"Accuracy: {acc_score:.4f}\n")
+        f.write(f"Precision: {precision:.4f}\n")
+        f.write(f"Recall: {recall:.4f}\n")
+        f.write(f"F1 Score: {f1:.4f}\n")
+        f.write(f"ROC AUC: {roc_auc:.4f}\n")
+        f.write("\n")  # Linea vuota per separare i risultati
+
+
     return loss, acc
 
 
 def accuracy(pred_y, y):
     return ((pred_y == y).sum() / len(y)).item()  # Confronta le previsioni con le etichette reali e calcola la  percentuale di corrispondenza
-
 
 
 
@@ -212,21 +234,34 @@ def accuracy(pred_y, y):
 
 
 
-chimeric_dataset = torch.load("chimeric_dataset_BERT.pt", map_location=torch.device('cpu'))
-not_chimeric_dataset = torch.load("not_chimeric_dataset_BERT.pt", map_location=torch.device('cpu'))
 
-dataset = ConcatDataset([chimeric_dataset, not_chimeric_dataset])
+in_channels = 24
+hidden_channels = 256
+out_channels = 2
 
-train_size = int(0.8 * len(dataset))
-val_size = int(0.1 * len(dataset))
-test_size = len(dataset) - train_size - val_size
+result_path = "results/One-Hot_results.txt"
 
 
-train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
 
-train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)
-test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
-model = train(model, train_loader)
-test_loss, test_acc = test(model, test_loader)
-print(f'Test Loss: {test_loss:.2f} | Test Acc: {test_acc*100:.2f}%')
+chimeric_dataset = torch.load("dataset/chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
+not_chimeric_dataset = torch.load("dataset/not_chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
+
+
+dataset = ConcatDataset([chimeric_dataset[0:10],not_chimeric_dataset[0:10]])
+
+for run in range(1, 6):
+    train_size = int(0.8 * len(dataset))
+    val_size = int(0.1 * len(dataset))
+    test_size = len(dataset) - train_size - val_size
+
+    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
+
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=64, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
+
+    model = GCN(in_channels, hidden_channels, out_channels)
+
+    model = train(model, train_loader)
+    test_loss, test_acc = test(model, test_loader, result_path, run)
+    print(f'Test Loss: {test_loss:.2f} | Test Acc: {test_acc*100:.2f}%')

@@ -1,15 +1,11 @@
 import toyplot
 from sklearn.metrics import roc_curve, auc
 import torch
-from torch.utils.data import Dataset, Subset
 import numpy as np
 from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_mean_pool
-from torch.utils.data import ConcatDataset
 import matplotlib.pyplot as plt
-from sklearn.model_selection import KFold
 
 
 
@@ -20,6 +16,7 @@ from sklearn.model_selection import KFold
                     Creazione grafo di De Bruijn
 
 """
+
 
 
 
@@ -112,6 +109,7 @@ def print_adjacency_matrix(nodes, adjacency_matrix):
 
 
 
+
 onehot = {
     'A': [1, 0, 0, 0],
     'C': [0, 1, 0, 0],
@@ -138,11 +136,14 @@ def get_feature_matrix(nodes):
 
 
 
+
+
 """
 
                     Creazione del dataset per il modello
 
 """
+
 
 
 
@@ -201,11 +202,13 @@ def create_graph_data(sequences, chimeric):
 
 
 
+
 """
 
                         Modello GNN
 
 """
+
 
 
 
@@ -381,9 +384,15 @@ def accuracy(pred_y, y):
     return ((pred_y == y).sum() / len(y)).item()  # Confronta le previsioni con le etichette reali e calcola la  percentuale di corrispondenza
 
 
+
+
+
 """
 
                             MAIN
+
+"""
+
 
 
 
@@ -398,37 +407,3 @@ not_chimeric_data_list = create_graph_data(not_chimeric_sequences, chimeric=Fals
 
 torch.save(chimeric_data_list, 'dataset/chimeric_dataset_ONE-HOT.pt')
 torch.save(not_chimeric_data_list, 'dataset/not_chimeric_dataset_ONE-HOT.pt')
-
-
-
-
-                            K-Fold Validation
-
-"""
-
-
-chimeric_data_list = torch.load('dataset/chimeric_dataset_ONE-HOT.pt')
-not_chimeric_data_list = torch.load('dataset/not_chimeric_dataset_ONE-HOT.pt')
-
-
-dataset = ConcatDataset([chimeric_data_list, not_chimeric_data_list])
-test_size = int(0.1 * len(dataset))
-train_val_size = len(dataset) - test_size
-
-train_val_set, test_set = torch.utils.data.random_split(dataset, [train_val_size, test_size])
-
-test_loader = DataLoader(test_set, batch_size=32, shuffle=False)
-kf = KFold(n_splits=5, shuffle=True)
-
-for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_set)):
-    train_subset = Subset(train_val_set, train_idx)
-    val_subset = Subset(train_val_set, val_idx)
-
-    train_loader = DataLoader(train_subset, batch_size=32, shuffle=True)
-    val_loader = DataLoader(val_subset, batch_size=32, shuffle=True)
-
-    model = GCN(in_channels, hidden_channels, out_channels)
-
-    trained_model = train(model, train_loader)
-    test_loss, test_acc = test(trained_model, test_loader)
-    print(f'Test Loss: {test_loss:.2f} | Test Acc: {test_acc :.2f}%')
