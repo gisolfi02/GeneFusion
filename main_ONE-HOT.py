@@ -14,6 +14,7 @@ import seaborn as sns
 
 
 
+
 """
 
                     Creazione grafo di De Bruijn
@@ -448,7 +449,7 @@ chimeric_dataset = torch.load("dataset/chimeric_dataset_ONE-HOT.pt", map_locatio
 not_chimeric_dataset = torch.load("dataset/not_chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
 dataset = ConcatDataset([chimeric_dataset, not_chimeric_dataset])
 
-for run in range(1, 6):
+for run in range(2, 6):
     train_size = int(0.8 * len(dataset))
     val_size = int(0.1 * len(dataset))
     test_size = len(dataset) - train_size - val_size
