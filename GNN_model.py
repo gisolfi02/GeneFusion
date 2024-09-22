@@ -1,18 +1,12 @@
-from fsspec.registry import s3_msg
-from sympy.benchmarks.bench_meijerint import sigma1
 from torch_geometric.loader import DataLoader
 import torch
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_mean_pool
 import numpy as np
 from sklearn.metrics import roc_curve, auc, accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-from torch.utils.data import ConcatDataset, Subset
+from torch.utils.data import ConcatDataset
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-
-
-
 
 """
 
@@ -25,15 +19,12 @@ import seaborn as sns
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels):
+    def __init__(self, in_channels, hidden_channels, out_channels, dropout = 0.5):
         super(GCN, self).__init__()
 
         self.conv1 = GCNConv(in_channels, hidden_channels)
         self.conv2 = GCNConv(hidden_channels, hidden_channels)
-        self.conv3 = GCNConv(hidden_channels, hidden_channels)
-        self.conv4 = GCNConv(hidden_channels, hidden_channels)
-        self.conv5 = GCNConv(hidden_channels, hidden_channels)
-        self.conv6 = GCNConv(hidden_channels, hidden_channels)
+        self.dropout = torch.nn.Dropout(dropout)
         self.lin = torch.nn.Linear(hidden_channels, out_channels)
 
     def forward(self, data):
@@ -42,29 +33,19 @@ class GCN(torch.nn.Module):
         # Passaggio attraverso i livelli GCN
         x = self.conv1(x, edge_index)
         x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
+        x = self.dropout(x)
         x = self.conv2(x, edge_index)
         x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv3(x, edge_index)
-        x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv4(x,edge_index)
-        x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv5(x, edge_index)
-        x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv6(x, edge_index)
+        x = self.dropout(x)
+
 
 
         # Pooling globale (media) per ottenere un vettore per ogni grafo
         x = global_mean_pool(x, batch)
 
         # Classifier
-        x = F.dropout(x, p=0.5, training=self.training)
         x = self.lin(x)
-        return F.log_softmax(x, dim=1)
+        return x
 
 
 
@@ -81,8 +62,8 @@ class GCN(torch.nn.Module):
 
 
 def train(model, loader):
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.01)
+    criterion = torch.nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
     epochs = 200  # Numero di epoche per cui allenare il modello
 
@@ -99,79 +80,103 @@ def train(model, loader):
         # Addestramento del modello su mini-batch
         for data in loader:
             optimizer.zero_grad() # Resetto i gradienti dell'ottimizzatore
-            out = model(data)  # Passo i dati attraverso il modello
-            loss = criterion(out, data.y) # Passo i dati attraverso il modello
+            out = model(data).squeeze()  # Passo i dati attraverso il modello
+
+            min_size = min(out.size(0), data.y.size(0))
+            if out.size(0) != data.y.size(0):
+                out = out[:min_size]  # Slice output to match the size of data.y
+                data.y = data.y[:min_size]  # Slice the labels to match the size of the output
 
             # Aggiorno la perdita totale e l'accuratezza per questa epoca
+            loss = criterion(out, data.y.float())  # Passo i dati attraverso il modello
             total_loss += loss / len(loader)
-            acc += accuracy(out.argmax(dim=1), data.y) / len(loader)
 
             loss.backward() # Calcolo i gradienti per la backpropagation
             optimizer.step()  # Aggiorno i parametri del modello usando l'ottimizzatore
 
-            val_loss, val_acc = validate(model, val_loader) # Validazione del modello sul set di validazione
+            acc = validate(model, loader)  # Validazione del modello sul set di addestramento
+            val_acc = validate(model, val_loader) # Validazione del modello sul set di validazione
 
         # Stampo le metriche ogni 10 epoche per monitorare l'addestramento
         if epoch % 10 == 0:
             print(f'Epoch {epoch:>3} | Train Loss: {total_loss:.2f} '
-                  f'| Train Acc: {acc*100:>5.2f}% '
-                  f'| Val Loss: {val_loss:.2f} '
-                  f'| Val Acc: {val_acc*100:.2f}%')
+                  f'| Train Acc: {acc:.4f}% '
+                  f'| Val Acc: {val_acc:.4f}%')
 
     return model
 
 
 @torch.no_grad()
 def validate(model, loader):
-    criterion = torch.nn.CrossEntropyLoss()
-
     model.eval()
 
-    loss = 0
-    acc = 0
+    correct = 0
+    total = 0
 
     for data in loader:
-        out = model(data)
+        with torch.no_grad():  # Disable gradient computation for evaluation
+            out = model(data).squeeze()  # Get logits and remove singleton dimension if needed
 
-        # Calcola la perdita per il batch corrente
-        loss += criterion(out, data.y) / len(loader)
+            # Ensure output and labels match in size
+            min_size = min(out.size(0), data.y.size(0))
+            if out.size(0) != data.y.size(0):
+                out = out[:min_size]  # Slice output to match size of labels
+                data.y = data.y[:min_size]  # Slice labels to match size of output
 
-        # Calcola l'accuratezza
-        acc += accuracy(out.argmax(dim=1), data.y) / len(loader)
+            # Apply sigmoid to get probabilities, and classify as 1 if probability >= 0.5
+            preds = torch.sigmoid(out) >= 0.5
 
-    return loss, acc
+            # Ensure preds and labels are of the same shape
+            labels = data.y.view(-1).float()  # Ensure labels are of shape (batch_size,) and float
+
+            # Calculate number of correct predictions
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)  # Count total samples
+
+    return correct / total  # Return accuracy
 
 
 @torch.no_grad()
 def test(model, loader, path, run):
-    criterion = torch.nn.CrossEntropyLoss()
-
     model.eval()
 
     all_preds = []
     all_labels = []
-    loss = 0
-    acc = 0
+    total = 0
+    correct = 0
 
     for data in loader:
-        out = model(data)
+        with torch.no_grad():  # Disable gradient computation for evaluation
+            out = model(data).squeeze()  # Get logits and remove singleton dimension if needed
 
-        # Calcola la perdita per il batch corrente
-        loss += criterion(out, data.y) / len(loader)
+            # Ensure output and labels match in size
+            min_size = min(out.size(0), data.y.size(0))
+            if out.size(0) != data.y.size(0):
+                out = out[:min_size]  # Slice output to match size of labels
+                data.y = data.y[:min_size]  # Slice labels to match size of output
 
-        # Calcola l'accuratezza
-        acc += accuracy(out.argmax(dim=1), data.y) / len(loader)
+            # Apply sigmoid to get probabilities, and classify as 1 if probability >= 0.5
+            preds = torch.sigmoid(out) >= 0.5
+            probs = torch.sigmoid(out)
 
-        # Estrai le probabilità predette per la classe positiva
-        prob = torch.softmax(out, dim=1)[:, 1]  # Probabilità della classe positiva (1)
+            # Ensure preds and labels are of the same shape
+            labels = data.y.view(-1).float()  # Ensure labels are of shape (batch_size,) and float
 
-        # Salva le probabilità e le etichette vere
-        all_preds.append(prob.cpu().numpy())  # Porta i dati su CPU per sklearn
-        all_labels.append(data.y.cpu().numpy())
+            # Calculate number of correct predictions
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)  # Count total samples
+
+            all_preds.append(probs.cpu().numpy())
+            all_labels.append(data.y.cpu().numpy())
 
     # Concatena i risultati di tutti i batch
     all_preds = np.concatenate(all_preds)
     all_labels = np.concatenate(all_labels)
+
+    # Check if both classes are present in the test set
+    if len(np.unique(all_labels)) == 1:
+        print("Only one class present in y_true. ROC AUC score is not defined.")
+        return correct / total
 
     all_preds_binary = (all_preds > 0.5).astype(int)
 
@@ -217,7 +222,7 @@ def test(model, loader, path, run):
         f.write("\n")  # Linea vuota per separare i risultati
 
 
-    return loss, acc
+    return correct / total
 
 
 def accuracy(pred_y, y):
@@ -237,30 +242,32 @@ def accuracy(pred_y, y):
 
 
 
-in_channels = 768
-hidden_channels = 256
-out_channels = 2
+in_channels = 768 #24
+hidden_channels = 128 #16
+out_channels = 1
 
-result_path = "results/BERT_results_1.txt"
+result_path = "results/BERT_results_2.txt"
 
 
-
+#chimeric_dataset = torch.load("dataset/chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
+#not_chimeric_dataset = torch.load("dataset/not_chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
+#dataset = ConcatDataset([chimeric_dataset,not_chimeric_dataset])
 
 dataset = torch.load("dataset/dataset_BERT.pth", map_location=torch.device('cpu'))
 
+for run in range(1, 6):
+    train_size = int(0.8 * len(dataset))
+    val_size = int(0.1 * len(dataset))
+    test_size = len(dataset) - train_size - val_size
 
-train_size = int(0.8 * len(dataset))
-val_size = int(0.1 * len(dataset))
-test_size = len(dataset) - train_size - val_size
+    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
 
-train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=64, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
 
-train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=64, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
+    model = GCN(in_channels, hidden_channels, out_channels)
 
-model = GCN(in_channels, hidden_channels, out_channels)
-
-model = train(model, train_loader)
-test_loss, test_acc = test(model, test_loader, result_path, 1)
-print(f'Test Loss: {test_loss:.2f} | Test Acc: {test_acc*100:.2f}%')
+    model = train(model, train_loader)
+    test_acc = test(model, test_loader, result_path, run)
+    print(f'Test Acc: {test_acc:.4f}%')
