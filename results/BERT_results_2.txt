@@ -5,3 +5,24 @@ Recall: 0.8866
 F1 Score: 0.9053
 ROC AUC: 0.9520
 
+Run: 2
+Accuracy: 0.9110
+Precision: 0.9036
+Recall: 0.8929
+F1 Score: 0.8982
+ROC AUC: 0.9707
+
+Run: 3
+Accuracy: 0.8796
+Precision: 0.8542
+Recall: 0.9011
+F1 Score: 0.8770
+ROC AUC: 0.9273
+
+Run: 4
+Accuracy: 0.9634
+Precision: 0.9899
+Recall: 0.9423
+F1 Score: 0.9655
+ROC AUC: 0.9886
+
