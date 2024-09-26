@@ -1,12 +1,16 @@
 from torch_geometric.loader import DataLoader
 import torch
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, global_mean_pool
+from torch_geometric.nn import GCNConv, global_mean_pool, GATv2Conv,  SAGEConv
 import numpy as np
 from sklearn.metrics import roc_curve, auc, accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from torch.utils.data import ConcatDataset
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+
+
+
 
 """
 
@@ -45,6 +49,83 @@ class GCN(torch.nn.Module):
 
         # Classifier
         x = self.lin(x)
+        return x
+
+
+
+
+
+"""
+
+                    Modello GAT
+
+"""
+
+
+
+
+
+class GAT(torch.nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, heads = 8):
+        super(GAT, self).__init__()
+        self.gat1 = GATv2Conv(in_channels, hidden_channels, heads=heads)
+        self.gat2 = GATv2Conv(hidden_channels * heads, hidden_channels, heads=1)
+        self.lin = torch.nn.Linear(hidden_channels, out_channels)
+
+    def forward(self, data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+
+        # Passaggio attraverso i livelli GAT
+        x = F.dropout(x, training=self.training, p=0.6)
+        x = self.gat1(x, edge_index)
+        x = F.elu(x)
+        x = F.dropout(x, training=self.training, p=0.6)
+        x = self.gat2(x, edge_index)
+        x = F.elu(x)
+
+        x = global_mean_pool(x, batch)  # Pooling globale (media) per ottenere un vettore per ogni grafo
+
+        x = self.lin(x)  # Classifier
+
+        return x
+
+
+
+
+
+
+"""
+
+                Modello SAGE
+
+"""
+
+
+
+
+
+class SAGE(torch.nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels):
+        super(SAGE, self).__init__()
+        self.sage1 = SAGEConv(in_channels, hidden_channels)
+        self.sage2 = SAGEConv(hidden_channels, hidden_channels)
+        self.lin = torch.nn.Linear(hidden_channels, out_channels)
+
+    def forward(self, data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+
+        # Passaggio attraverso i livelli SAGE
+        x = F.dropout(x, training=self.training, p=0.6)
+        x = self.sage1(x, edge_index).relu()
+        x = F.relu(x)
+        x = F.dropout(x, training=self.training, p=0.6)
+        x = self.sage2(x, edge_index)
+        x = F.relu(x)
+
+        x = global_mean_pool(x, batch)  # Pooling globale (media) per ottenere un vettore per ogni grafo
+
+        x = self.lin(x)  # Classifier
+
         return x
 
 
@@ -242,18 +323,18 @@ def accuracy(pred_y, y):
 
 
 
-in_channels = 768 #24
-hidden_channels = 128 #16
+in_channels = 24 #768
+hidden_channels = 16 #128
 out_channels = 1
 
-result_path = "results/BERT_results_2.txt"
+result_path = "results/One-Hot_results_SAGE.txt"
 
 
-#chimeric_dataset = torch.load("dataset/chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
-#not_chimeric_dataset = torch.load("dataset/not_chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
-#dataset = ConcatDataset([chimeric_dataset,not_chimeric_dataset])
+chimeric_dataset = torch.load("dataset/chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
+not_chimeric_dataset = torch.load("dataset/not_chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
+dataset = ConcatDataset([chimeric_dataset,not_chimeric_dataset])
 
-dataset = torch.load("dataset/dataset_BERT.pth", map_location=torch.device('cpu'))
+#dataset = torch.load("dataset/dataset_BERT.pth", map_location=torch.device('cpu'))
 
 for run in range(1, 6):
     train_size = int(0.8 * len(dataset))
@@ -266,7 +347,9 @@ for run in range(1, 6):
     val_loader = DataLoader(val_dataset, batch_size=64, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
 
-    model = GCN(in_channels, hidden_channels, out_channels)
+#   model = GCN(in_channels, hidden_channels, out_channels)
+#   model = GAT(in_channels, hidden_channels, out_channels)
+#   model = SAGE(in_channels, hidden_channels, out_channels)
 
     model = train(model, train_loader)
     test_acc = test(model, test_loader, result_path, run)
