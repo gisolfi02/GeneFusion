@@ -323,18 +323,18 @@ def accuracy(pred_y, y):
 
 
 
-in_channels = 24 #768
-hidden_channels = 16 #128
+in_channels = 768 #24
+hidden_channels = 128 #16
 out_channels = 1
 
-result_path = "results/One-Hot_results_SAGE.txt"
+result_path = "results/BERT_results_GAT.txt"
 
 
-chimeric_dataset = torch.load("dataset/chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
-not_chimeric_dataset = torch.load("dataset/not_chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
-dataset = ConcatDataset([chimeric_dataset,not_chimeric_dataset])
+#chimeric_dataset = torch.load("dataset/chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
+#not_chimeric_dataset = torch.load("dataset/not_chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
+#dataset = ConcatDataset([chimeric_dataset,not_chimeric_dataset])
 
-#dataset = torch.load("dataset/dataset_BERT.pth", map_location=torch.device('cpu'))
+dataset = torch.load("dataset/dataset_BERT.pth", map_location=torch.device('cpu'))
 
 for run in range(1, 6):
     train_size = int(0.8 * len(dataset))
@@ -347,9 +347,9 @@ for run in range(1, 6):
     val_loader = DataLoader(val_dataset, batch_size=64, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)
 
-#   model = GCN(in_channels, hidden_channels, out_channels)
-#   model = GAT(in_channels, hidden_channels, out_channels)
-#   model = SAGE(in_channels, hidden_channels, out_channels)
+#    model = GCN(in_channels, hidden_channels, out_channels)
+    model = GAT(in_channels, hidden_channels, out_channels)
+#    model = SAGE(in_channels, hidden_channels, out_channels)
 
     model = train(model, train_loader)
     test_acc = test(model, test_loader, result_path, run)
