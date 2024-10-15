@@ -1,275 +1,144 @@
+import pandas as pd
+from transformers import BertModel, BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments
 import torch
-from transformers import BertModel, BertTokenizer, BertConfig, BertForSequenceClassification, PreTrainedTokenizer
-from torch.utils.data import Dataset
-from torch_geometric.loader import DataLoader
-import collections
-from itertools import product
-import os
+from sklearn.metrics import accuracy_score
+import numpy as np
 
-def estrai_sequenze_geni(file_fastq):
-    sequenze_geni = []
-    k = 0
-    with open(file_fastq, 'r') as file:
-        lines = file.readlines()
-        for i in range(0, len(lines), 2):
-            sequence = lines[i + 1].strip()
-            sequenze_geni.append(sequence)
-            k += 1
-            if(k == 960):
-                break
-    return sequenze_geni
 
-def get_kmer(sequence, k=4):
-    kmers = []
-    for i in range(0, len(sequence)):
-        if len(sequence[i:i + k]) != k:
-            continue
-        kmers.append(sequence[i:i + k])
+def seq2kmer(seq, k):
+    """
+    Convert original sequence to kmers
+
+    Arguments:
+    seq -- str, original sequence.
+    k -- int, kmer of length k specified.
+
+    Returns:
+    kmers -- str, kmers separated by space
+
+    """
+    kmer = [seq[x:x + k] for x in range(len(seq) + 1 - k)]
+    kmers = " ".join(kmer)
     return kmers
 
 
-def create_vocab_file(vocab_path, len_kmer=4, add_n=True):
+# Function to process the FASTQ file and create a DataFrame
+def process_fastq(file_path, label, k=3):
     """
-    Create a vocabulary file for DNA sequences with k-mers.
+    Extract sequences from a FASTQ file, kmerize the sequences, and store them in a DataFrame.
+    Args:
+    - file_path (str): The path to the FASTQ file.
+    - label (str): The label to assign to the sequences (e.g., 'chimeric' or 'non-chimeric').
+    - k (int): The size of k-mers to generate.
 
-    Parameters:
-    vocab_path (str): Path to save the vocabulary file.
-    len_kmer (int): Length of k-mers to include in the vocabulary.
-    add_n (bool): Whether to include 'N' in the vocabulary.
+    Returns:
+    - df (pd.DataFrame): A DataFrame with two columns: 'kmerized_sequence' and 'label'.
     """
-    # Define the alphabet
-    bases = ['A', 'C', 'G', 'T', 'N'] if add_n else ['A', 'C', 'G', 'T']
+    sequences = []
 
-    # Generate all possible k-mers
-    kmers = [''.join(kmer) for kmer in product(bases, repeat=len_kmer)]
+    # Manually parse the FASTQ file to extract sequences
+    with open(file_path, 'r') as file:
+        while True:
+            file.readline()  # Skip the identifier line
+            sequence = file.readline().strip()  # Read the sequence line
+            file.readline()  # Skip the '+' line
+            file.readline()  # Skip the quality score line
 
-    # Special tokens
-    special_tokens = ['[PAD]', '[UNK]', '[CLS]', '[SEP]', '[MASK]']
+            if not sequence:
+                break
+            sequences.append(sequence)
 
-    # Write to vocab file
-    with open(vocab_path, 'w') as vocab_file:
-        for token in special_tokens:
-            vocab_file.write(f'{token}\n')
-        for kmer in kmers:
-            vocab_file.write(f'{kmer}\n')
+    # Apply the kmerize function to each sequence
+    kmerized_sequences = [seq2kmer(seq, k) for seq in sequences]
 
-# Tokenizer Creation
-class DNABertTokenizer(PreTrainedTokenizer):
-    def __init__(self, vocab_file, **kwargs):
-        """
-        Custom DNA BERT Tokenizer for handling DNA sequences and converting them into k-mers.
+    # Create a DataFrame with kmerized sequences and the label
+    df = pd.DataFrame({
+        'kmerized_sequence': kmerized_sequences,
+        'label': [label] * len(kmerized_sequences)
+    })
 
-        :param vocab_file: Path to the pre-created vocabulary file.
-        """
-        self.vocab_name = 'vocab_kmer_4'  # Nome del file del vocabolario
-        self.vocab_path = f'./{self.vocab_name}.txt'
+    return df
 
-        # Load the vocabulary into memory
-        self.vocab = self._load_vocab(vocab_file)
-        self.ids_to_tokens = collections.OrderedDict((i, t) for t, i in self.vocab.items())
-
-        # Initialize the superclass with the vocab file
-        super().__init__(vocab_file=vocab_file, **kwargs)
-
-        # Define special tokens
-        self.cls_token = "[CLS]"
-        self.sep_token = "[SEP]"
-        self.pad_token = "[PAD]"
-        self.unk_token = "[UNK]"
-        self.mask_token = "[MASK]"
-
-        # Add special tokens to the tokenizer
-        self.add_special_tokens({
-            "cls_token": self.cls_token,
-            "sep_token": self.sep_token,
-            "pad_token": self.pad_token,
-            "unk_token": self.unk_token,
-            "mask_token": self.mask_token,
-        })
-
-    @property
-    def vocab_size(self):
-        """
-        Returns the size of the vocabulary.
-        """
-        return len(self.vocab)
-
-    def _load_vocab(self, vocab_file):
-        """
-        Load the vocabulary from a file into a dictionary.
-        """
-        vocab = collections.OrderedDict()
-        with open(vocab_file, 'r') as f:
-            for idx, token in enumerate(f.readlines()):
-                vocab[token.strip()] = idx
-        return vocab
-
-    def _tokenize(self, text):
-        """
-        Tokenize the input DNA sequence by splitting it into k-mers.
-        """
-        kmer_size = len(next(iter(self.vocab)))  # Determine the k-mer length from the vocab
-        return [text[i:i+kmer_size] for i in range(0, len(text) - kmer_size + 1)]
-
-    def _convert_token_to_id(self, token):
-        """
-        Convert a token (k-mer) into an ID using the vocab.
-        """
-        return self.vocab.get(token, self.vocab.get(self.unk_token))
-
-    def _convert_id_to_token(self, index):
-        """
-        Convert an ID back into a token (k-mer).
-        """
-        return self.ids_to_tokens.get(index, self.unk_token)
-
-    def build_inputs_with_special_tokens(self, token_ids_0, token_ids_1=None):
-        """
-        Build model inputs from a single sequence by adding special tokens.
-        Sequence: [CLS] X [SEP]
-        """
-        cls = [self.cls_token_id]
-        sep = [self.sep_token_id]
-        return cls + token_ids_0 + sep
-
-    def get_vocab(self):
-        """
-        Return the vocabulary as a dictionary mapping tokens to IDs.
-        """
-        return self.vocab
-
-    def save_vocabulary(self, save_directory, filename_prefix=None):
-        """
-        Save the tokenizer vocabulary to the specified directory.
-        """
-        vocab_file = os.path.join(save_directory, (filename_prefix + "-" if filename_prefix else "") + self.vocab_name + ".txt")
-        with open(vocab_file, 'w') as f:
-            for token, idx in self.vocab.items():
-                f.write(f"{token}\n")
-        return (vocab_file,)
-
-
-class DNADataset(Dataset):
-    def __init__(self, sequences, labels, tokenizer, max_length):
-        self.sequences = sequences
+# Create the DNADataset class
+class DNADataset(torch.utils.data.Dataset):
+    def __init__(self, encodings, labels):
+        self.encodings = encodings
         self.labels = labels
-        self.tokenizer = tokenizer
-        self.max_length = max_length
-
-    def __len__(self):
-        return len(self.sequences)
 
     def __getitem__(self, idx):
-        sequence = self.sequences[idx]
-        label = self.labels[idx]
+        item = {key: val[idx] for key, val in self.encodings.items()}
+        item['labels'] = self.labels[idx]
+        return item
 
-        # Tokenize the sequence
-        encoded = self.tokenizer(
-            sequence,
-            padding='max_length',
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors='pt'
-        )
+    def __len__(self):
+        return len(self.labels)
 
-        # Extract input_ids and attention_mask
-        input_ids = encoded['input_ids'].squeeze()
-        attention_mask = encoded['attention_mask'].squeeze()
-
-        return {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
-            'label': torch.tensor(label)
-        }
-
-chimeric = 'data/100_genes_Datasets_input/dataset_chimeric2.fastq'
-not_chimeric = 'data/100_genes_Datasets_input/dataset_non_chimeric.fastq'
-
-chimeric_sequences = estrai_sequenze_geni(chimeric)
-not_chimeric_sequences = estrai_sequenze_geni(not_chimeric)
+# Define the compute_metrics function
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    predictions = np.argmax(logits, axis=-1)  # Get the index of the highest logit
+    accuracy = accuracy_score(labels, predictions)
+    return {
+        'accuracy': accuracy
+    }
 
 
-
-# Run this script to create the vocab file
-vocab_path = './vocab_kmer_4.txt'
-create_vocab_file(vocab_path, len_kmer=4, add_n=True)
-
-print(f'Vocabulary created and saved to {vocab_path}')
-
-tokenizer = DNABertTokenizer(vocab_file='./vocab_kmer_4.txt')
-
-chimeric_kmers_sequences = []
-not_chimeric_kmers_sequences = []
-
-for sequence in chimeric_sequences:
-    kmers = get_kmer(sequence)
-    chimeric_kmers_sequences.append(kmers)
-
-for sequence in not_chimeric_kmers_sequences:
-    kmers = get_kmer(sequence)
-    not_chimeric_kmers_sequences.append(kmers)
-
-sequences = chimeric_kmers_sequences + not_chimeric_kmers_sequences
-labels = [1] * len(chimeric_sequences) + [0] * len(not_chimeric_sequences)
-
-BERT_dataset = DNADataset(sequences, labels, tokenizer, max_length=128)
-dataloader = DataLoader(BERT_dataset, batch_size=64, shuffle=True)
-
-config = BertConfig(
-    vocab_size=len(tokenizer.vocab),  # The size of your custom DNA vocab
-    hidden_size=768,  # Hidden layer size
-    num_labels=2
+# Define the training arguments
+training_args = TrainingArguments(
+    output_dir='./results',  # Output directory
+    num_train_epochs=15,  # Number of training epochs
+    per_device_train_batch_size=16,  # Batch size for training
+    per_device_eval_batch_size=16,  # Batch size for evaluation
+    warmup_steps=500,  # Number of warmup steps for learning rate scheduler
+    weight_decay=0.01,  # Strength of weight decay
+    logging_dir='./logs',  # Directory for storing logs
+    logging_steps=10,  # Log every 10 steps
+    eval_strategy="epoch",  # Evaluate every epoch
+    save_steps=500  # Save every 500 steps
 )
 
-# Initialize the BERT model
-BERT_model = BertForSequenceClassification(config)
-optimizer = torch.optim.AdamW(BERT_model.parameters(), lr=0.01)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-BERT_model.to(device)
+# Example usage:
+k = 6  # Set the k-mer size (you can change this value)
 
-print("Addestramento BERT model")
-# Loop per addestramento
-for epoch in range(500):
-    BERT_model.train()  # Imposta il modello in modalità di addestramento
-    total_loss = 0
-    correct_predictions = 0
-    total_predictions = 0
+# Process the FASTQ file and generate the DataFrame
+df_ch = process_fastq('data/100_genes_Datasets_input/dataset_chimeric2.fastq', 1, k)
+df_no_ch = process_fastq('data/100_genes_Datasets_input/dataset_non_chimeric.fastq', 0, k)
+df_fused = pd.concat([df_ch, df_no_ch], ignore_index=True)
 
-    for batch in dataloader:
-        input_ids = batch['input_ids'].to(device)
-        attention_mask = batch['attention_mask'].to(device)
-        labels = batch['label'].to(device)
 
-        # Forward pass per calcolare gli output, include labels
-        outputs = BERT_model(input_ids, attention_mask=attention_mask, labels=labels)
+model_name = "zhihan1996/DNA_bert_6"
+tokenizer = BertTokenizer.from_pretrained(model_name)
 
-        # Estrai la loss dagli output del modello
-        loss = outputs.loss
+# Assuming df_fused contains your 6-merized DNA sequences and labels
+sequences = df_fused['kmerized_sequence'].tolist()  # List of DNA sequences (6-mers)
+labels = df_fused['label'].tolist()  # List of labels (0 or 1)
 
-        # Estrai le predizioni dal modello
-        logits = outputs.logits
+# Tokenize all sequences at once
+encodings = tokenizer(sequences, padding='max_length', truncation=True, max_length=100, return_tensors='pt')
 
-        # Ottieni le predizioni con il valore massimo (classe predetta)
-        predictions = torch.argmax(logits, dim=-1)
 
-        # Aggiorna il conteggio delle predizioni corrette e totali
-        correct_predictions += (predictions == labels).sum().item()
-        total_predictions += labels.size(0)
+# Convert the labels to tensor format
+labels = torch.tensor(labels)
 
-        # Backward pass per aggiornare i pesi
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+# Create the dataset using the encodings and labels
+dataset = DNADataset(encodings, labels)
 
-        total_loss += loss.item()
+# Load the pre-trained model for sequence classification (with 2 labels)
+model_name = "zhihan1996/DNA_bert_6"
+model = BertForSequenceClassification.from_pretrained(model_name, num_labels=2)
 
-    # Calcolo dell'accuracy
-    accuracy = correct_predictions / total_predictions
-    if epoch % 10 == 0:
-        print(f"Epoch {epoch}, Loss: {total_loss / len(dataloader):.4f}, Accuracy: {accuracy:.4f}")
+# Initialize the Trainer with the classification model
+trainer = Trainer(
+    model=model,  # The pre-trained model with a classification head
+    args=training_args,  # Training arguments
+    train_dataset=dataset,  # The dataset for training
+    eval_dataset=dataset,  # The dataset for evaluation (can be split if needed)
+    tokenizer=tokenizer,  # The tokenizer used
+    compute_metrics=compute_metrics  # Pass the custom metrics function
+)
 
-save_directory = "./bert_model"
-BERT_model.save_pretrained(save_directory)
-tokenizer.save_pretrained(save_directory)
+# Fine-tune the model
+trainer.train()
 
-print(f"Modello salvato nella directory: {save_directory}")
+# Assuming 'model' is your fine-tuned BertForSequenceClassification or BertModel
+model.save_pretrained('./bert_model')  # Specify the directory to save the model
