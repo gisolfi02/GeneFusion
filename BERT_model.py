@@ -6,17 +6,6 @@ import numpy as np
 
 
 def seq2kmer(seq, k):
-    """
-    Convert original sequence to kmers
-
-    Arguments:
-    seq -- str, original sequence.
-    k -- int, kmer of length k specified.
-
-    Returns:
-    kmers -- str, kmers separated by space
-
-    """
     kmer = [seq[x:x + k] for x in range(len(seq) + 1 - k)]
     kmers = " ".join(kmer)
     return kmers
@@ -24,16 +13,6 @@ def seq2kmer(seq, k):
 
 # Function to process the FASTQ file and create a DataFrame
 def process_fastq(file_path, label, k=3):
-    """
-    Extract sequences from a FASTQ file, kmerize the sequences, and store them in a DataFrame.
-    Args:
-    - file_path (str): The path to the FASTQ file.
-    - label (str): The label to assign to the sequences (e.g., 'chimeric' or 'non-chimeric').
-    - k (int): The size of k-mers to generate.
-
-    Returns:
-    - df (pd.DataFrame): A DataFrame with two columns: 'kmerized_sequence' and 'label'.
-    """
     sequences = []
 
     # Manually parse the FASTQ file to extract sequences
