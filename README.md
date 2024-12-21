@@ -1,3 +1,7 @@
+<p>
+  <img src="https://github.com/user-attachments/assets/34e635a8-7d72-436a-948d-5649c4bd35ae", width=200px>
+</p>
+
 # GeneFusion
 
 GeneFusion è un progetto dedicato all'analisi delle fusioni geniche utilizzando modelli di deep learningc che ho sviluppato per il mio lavoro di tesi. Il repository contiene implementazioni di modelli basati su GNN per la classificazione delle sequenze geniche e utilizza due diverse tecniche di encoding delle sequenze, DNABERT e One-Hot Encoding.
