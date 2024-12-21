@@ -32,7 +32,7 @@ pip install torch transformers torch-geometric toyplot numpy pandas scikit-learn
 ```
 
 ## Utilizzo
-A seconda della tecnica di encoding che si desidera utilizzare, la pipeline de seguire è diversa.
+A seconda della tecnica di encoding che si desidera utilizzare, la pipeline da seguire è diversa.
 ### Pipeline DNABERT
 Addestrare il modello DNABERT eseguendo il seguente comando:
 ```bash
