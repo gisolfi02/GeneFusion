@@ -1,5 +1,5 @@
-<p>
-  <img src="https://github.com/user-attachments/assets/34e635a8-7d72-436a-948d-5649c4bd35ae", width=200px>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/34e635a8-7d72-436a-948d-5649c4bd35ae", width=400px>
 </p>
 
 # GeneFusion
