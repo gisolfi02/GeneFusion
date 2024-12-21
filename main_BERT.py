@@ -220,5 +220,5 @@ not_chimeric_data_list = create_graph_data(not_chimeric_sequences, chimeric=Fals
 dataset = ConcatDataset([chimeric_data_list, not_chimeric_data_list])
 
 
-torch.save(chimeric_data_list, 'chimeric_dataset_BERT.pt')
-torch.save(not_chimeric_data_list, 'not_chimeric_dataset_BERT.pt')
+torch.save(chimeric_data_list, 'dataset/chimeric_dataset_BERT.pt')
+torch.save(not_chimeric_data_list, 'dataset/not_chimeric_dataset_BERT.pt')
