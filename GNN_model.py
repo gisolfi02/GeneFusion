@@ -330,11 +330,9 @@ out_channels = 1
 result_path = "results/BERT_results_GAT.txt"
 
 
-#chimeric_dataset = torch.load("dataset/chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
-#not_chimeric_dataset = torch.load("dataset/not_chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
-#dataset = ConcatDataset([chimeric_dataset,not_chimeric_dataset])
-
-dataset = torch.load("dataset/dataset_BERT.pth", map_location=torch.device('cpu'))
+chimeric_dataset = torch.load("dataset/chimeric_dataset_BERT.pt", map_location=torch.device('cpu'))
+not_chimeric_dataset = torch.load("dataset/not_chimeric_dataset_BERT.pt", map_location=torch.device('cpu'))
+dataset = ConcatDataset([chimeric_dataset,not_chimeric_dataset])
 
 for run in range(1, 6):
     train_size = int(0.8 * len(dataset))
