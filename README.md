@@ -1,19 +1,19 @@
 # GeneFusion
 
-GeneFusion è un progetto dedicato all'analisi delle fusioni geniche utilizzando modelli di deep learningc che ho sviluppato per il mio lavoro di tesi. Il repository contiene implementazioni di modelli basati su GNN per la classificazione delle sequenze geniche e utilizza due diverse tecniche di encoding delle sequenze, DNABERT e One-Hot Encoding.
+GeneFusion is a project dedicated to the analysis of gene fusions using deep learning models, developed as part of my thesis work. The repository contains implementations of GNN-based models for classifying gene sequences and utilizes two different sequence encoding techniques: DNABERT and One-Hot Encoding.
 
-## Struttura del Repository
+## Repository Structure
 
-- **data/**: Contiene i dataset contententi le sequenze geniche fuse e non fuse.
-- **results/**: Include i risultati ottenuti dagli esperimenti dei vari modelli implementati.
-- **BERT_model.py**: Script Python che definisce l'addestramento del modello DNABERT utilizzato per la codfica dei kmers delle sequenze genetiche.
-- **GNN_model.py**: Script Python che definisce l'architettura dei modelli basati su Graph Neural Network (GNN).
-- **main_BERT.py**: Script principale per la costruzione di un dataset compatibile con i modelli GNN codificando i kmers utilizzando il modello DNABERT.
-- **main_ONE-HOT.py**: Script principale la costruzione di un dataset compatibile con i modelli GNN codificando i kmers utilizzando la tecnica One-Hot Encoding. 
+- **data/**: Contains datasets with fused and non-fused gene sequences.
+- **results/**: Includes results obtained from experiments with various implemented models.
+- **BERT_model.py**: Python script defining the training of the DNABERT model used for k-mer encoding of genetic sequences.
+- **GNN_model.py**: Python script defining the architecture of Graph Neural Network (GNN) models.
+- **main_BERT.py**: Main script for constructing a dataset compatible with GNN models by encoding k-mers using the DNABERT model.
+- **main_ONE-HOT.py**: Main script for constructing a dataset compatible with GNN models by encoding k-mers using the One-Hot Encoding technique.
 
-## Prerequisiti
+## Prerequisites
 
-Assicurati di avere installato le seguenti dipendenze:
+Make sure you have installed the following dependencies:
 
 - **Torch**
 - **Transformers**
@@ -25,53 +25,54 @@ Assicurati di avere installato le seguenti dipendenze:
 - **Matplotlib**
 - **Seaborn**
 
-Puoi installare le dipendenze utilizzando pip:
+You can install the dependencies using pip:
 
 ```bash
 pip install torch transformers torch-geometric toyplot numpy pandas scikit-learn matplotlib seaborn
 ```
 
-## Utilizzo
-A seconda della tecnica di encoding che si desidera utilizzare, la pipeline da seguire è diversa.
-### Pipeline DNABERT
-Addestrare il modello DNABERT eseguendo il seguente comando:
+## Usage
+Depending on the encoding technique you wish to use, follow the respective pipeline.
+
+### DNABERT Pipeline
+Train the DNABERT model by running the following command:
 ```bash
 python BERT_model.py
 ```
-Successivamente runnare il file *main_BERT.py*:
+Then, run the *main_BERT.py* file:
 ```bash
 python main_BERT.py
 ```
-Infine, nel file *GNN_model.py* impostare i seguenti parametri:
+Finally, in the *GNN_model.py* file, set the following parameters:
 - **in_channels**: 768
 - **hidden_channels**: 128
 - **out_channels**: 1
 
-selezionare il modello desiderato, modificare le righe di codice 333-34 con le seguenti: 
+Select the desired model and modify lines 333-334 with the following:
 ```bash
 chimeric_dataset = torch.load("dataset/chimeric_dataset_BERT.pt", map_location=torch.device('cpu'))
 not_chimeric_dataset = torch.load("dataset/not_chimeric_dataset_BERT.pt", map_location=torch.device('cpu'))
 ```
-ed eseguire il comando
+and execute the command:
 ```bash
 python GNN_model.py
 ```
-### Pipeline One-Hot Encoding
-Runnare il file *main_ONE-HOT.py*:
+
+### One-Hot Encoding Pipeline
+Run the *main_ONE-HOT.py* file:
 ```bash
 python main_ONE-HOT.py
 ```
-Successivamente, nel file *GNN_model.py* impostare i seguenti parametri:
+Then, in the *GNN_model.py* file, set the following parameters:
 - **in_channels**: 24
 - **hidden_channels**: 16
 - **out_channels**: 1
 
-selezionare il modello desiderato, modificare le righe di codice 333-34 con le seguenti:
+Select the desired model and modify lines 333-334 with the following:
 ```bash
 chimeric_dataset = torch.load("dataset/chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
 not_chimeric_dataset = torch.load("dataset/not_chimeric_dataset_ONE-HOT.pt", map_location=torch.device('cpu'))
 ```
-ed eseguire il comando
+and execute the command:
 ```bash
 python GNN_model.py
-```
